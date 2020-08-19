@@ -1,0 +1,95 @@
+
+#include <SoftwareSerial.h>
+SoftwareSerial mySerial(2, 3); // Software serial object RX, TX
+
+const byte numBytes = 132;
+byte receivedBytes[numBytes];
+const byte receiveLength = 126;
+boolean newData = false;
+byte startMarkerCnt = 0;
+byte chkSum = 0;
+
+void setup()
+{
+  Serial.begin(38400);  // Debug serial port
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
+  mySerial.begin(38400);  // Baudrate setting here
+}
+
+void loop() {
+  recvBytesWithStartMarker();
+  showNewData();
+}
+
+void recvBytesWithStartMarker() {
+  static boolean recvInProgress = false;
+  static byte numBytesReceived = 0;
+  static byte mesgLen = 128-1;
+  const byte startMarker = 0xF8;
+  byte rc;
+
+  while (mySerial.available() > 0 && newData == false) {
+    rc = mySerial.read();  // read data byte from serial port
+    receivedBytes[numBytesReceived] = rc; // store data byte
+    numBytesReceived ++;     // next index
+    
+    if (numBytesReceived >= numBytes) {  // data overflow limit
+      Serial.println("Error Rx : RESET   !!");
+      emptyBuffer();
+      numBytesReceived = 0;
+      startMarkerCnt = 0;
+      chkSum = 0;
+      newData = false;
+    }
+
+    if (recvInProgress == true) {  // Data is receiving...
+       if (numBytesReceived >= mesgLen) { // got the whole message
+         recvInProgress = false;  // clear flag wait next data in
+         newData = true;  // enable data finished judgment
+         //Serial.println("Stop..");
+       } else {
+          chkSum -= rc;           // Calculate check sum
+       }
+    } else if (rc == startMarker) {  // check header are F8 F8
+        //emptyBuffer();
+        startMarkerCnt++;
+        if (startMarkerCnt >= 2) {
+          startMarkerCnt = 0;
+          recvInProgress = true;  // data ready set
+          numBytesReceived = 0;   // reset buffer index
+          //Serial.println("Start..");
+        }
+    }
+  }
+}
+
+void showNewData() {
+  if (newData == true) {
+    // in HEX format
+    //for (int n = 0; n < 128; n++) {
+    //  Serial.print(receivedBytes[n], HEX);
+    //  Serial.print(' ');
+    //}
+
+    if (chkSum == receivedBytes[126]) {
+          //Serial.println("Check sum ok !!");
+          for (int n = 2; n < 126; n++) {
+            Serial.print(receivedBytes[n], HEX);
+            Serial.print(' ');
+         }
+         Serial.println();
+    } else {
+       Serial.println("Check sum ng !!");
+    }
+    newData = false;
+    chkSum = 0;
+  }
+}
+
+void emptyBuffer() {
+  for (byte n = 0; n < numBytes; n++) {
+    receivedBytes[n] = 0;
+  }
+}
